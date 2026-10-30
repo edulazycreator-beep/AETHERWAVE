@@ -19,23 +19,181 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 3. Setup Gradle 8.5
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.5'
-
-      - name: 4. Compile Android APK
+      - name: 3. Siapkan Struktur Proyek Android & Compile APK (Tanpa Cache)
         run: |
-          if [ -f "build.gradle" ]; then
-            gradle assembleDebug --no-daemon
-            cp app/build/outputs/apk/debug/*.apk AetherWave-Radio.apk
-          elif [ -f "AetherWave-Android/build.gradle" ]; then
-            cd AetherWave-Android
-            gradle assembleDebug --no-daemon
-            cp app/build/outputs/apk/debug/*.apk ../AetherWave-Radio.apk
+          # Cari file index.html jika sudah diunggah sebelumnya
+          EXISTING_HTML=$(find . -name "index.html" | head -n 1)
+          mkdir -p build_apk/app/src/main/java/id/aetherwave/radio
+          mkdir -p build_apk/app/src/main/assets
+
+          if [ -n "$EXISTING_HTML" ]; then
+            cp "$EXISTING_HTML" build_apk/app/src/main/assets/index.html
           fi
 
-      - name: 5. Upload File APK Siap Pasang
+          cd build_apk
+
+          cat << 'EOF' > settings.gradle
+          rootProject.name = "AetherWave"
+          include ':app'
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.2.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'id.aetherwave.radio'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "id.aetherwave.radio"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <application
+                  android:allowBackup="true"
+                  android:label="AetherWave Radio"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/id/aetherwave/radio/MainActivity.java
+          package id.aetherwave.radio;
+          import android.annotation.SuppressLint;
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.view.Window;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import androidx.appcompat.app.AppCompatActivity;
+
+          public class MainActivity extends AppCompatActivity {
+              private WebView webView;
+              @SuppressLint("SetJavaScriptEnabled")
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  Window window = getWindow();
+                  window.setStatusBarColor(Color.parseColor("#090D16"));
+                  window.setNavigationBarColor(Color.parseColor("#090D16"));
+                  webView = new WebView(this);
+                  webView.setBackgroundColor(Color.parseColor("#090D16"));
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.loadUrl("file:///android_asset/index.html");
+                  setContentView(webView);
+              }
+          }
+          EOF
+
+          # Jika index.html belum ada di repo, buat aplikasi radio mandiri otomatis
+          if [ ! -f "app/src/main/assets/index.html" ]; then
+            cat << 'EOF' > app/src/main/assets/index.html
+          <!doctype html>
+          <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>AetherWave Radio</title>
+          <style>
+            *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+            body{font-family: system-ui,-apple-system,sans-serif;background:#090D16;color:#f8fafc;min-height:100vh;padding:16px}
+            .glass{background:linear-gradient(135deg,rgba(255,255,255,0.11),rgba(255,255,255,0.04));backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.15);border-radius:24px;padding:18px;margin-bottom:16px}
+            .btn{background:#38BDF8;color:#090D16;border:none;padding:12px 24px;border-radius:16px;font-weight:800;font-size:14px;cursor:pointer}
+            .row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);cursor:pointer}
+          </style></head><body>
+          <h2 style="margin-bottom:14px;font-weight:800">AetherWave Global Glass Radio</h2>
+          <div class="glass">
+            <div id="title" style="font-size:18px;font-weight:800">Pilih Stasiun Radio Dunia</div>
+            <div id="meta" style="font-size:12px;color:#94a3b8;margin:4px 0 14px">Live Global Stream · Dynamic Glass UI</div>
+            <button class="btn" id="playBtn">PUTAR RADIO</button>
+          </div>
+          <div class="glass" id="list"></div>
+          <audio id="audio"></audio>
+          <script>
+            const st=[
+              {n:"Prambors FM Jakarta",c:"Indonesia 🇮🇩",u:"https://s2.cloudmu.id/listen/prambors/radio.mp3",f:"https://ice1.somafm.com/indiepop-128-mp3"},
+              {n:"J-Pop Sakura & Shibuya",c:"Jepang 🇯🇵",u:"https://listen.moe/stream",f:"https://ice1.somafm.com/vaporwaves-128-mp3"},
+              {n:"Seoul K-Wave Live",c:"Korea Selatan 🇰🇷",u:"https://listen.moe/kpop/stream",f:"https://ice1.somafm.com/poptron-128-mp3"},
+              {n:"London Soho Electronic",c:"Inggris 🇬🇧",u:"https://ice1.somafm.com/groovesalad-256-mp3",f:"https://ice1.somafm.com/groovesalad-128-mp3"},
+              {n:"Radio Paradise California",c:"Amerika Serikat 🇺🇸",u:"https://stream.radioparadise.com/mp3-192",f:"https://ice1.somafm.com/secretagent-128-mp3"},
+              {n:"FIP Radio Paris",c:"Prancis 🇫🇷",u:"https://icecast.radiofrance.fr/fip-midfi.mp3",f:"https://ice1.somafm.com/lush-128-mp3"},
+              {n:"Al-Quran Radio Riyadh",c:"Arab Saudi 🇸🇦",u:"https://stream.radiojar.com/8s5u5tpdtwzuv",f:"https://ice1.somafm.com/dronezone-128-mp3"}
+            ];
+            let idx=0,playing=false;
+            const a=document.getElementById("audio"),btn=document.getElementById("playBtn"),t=document.getElementById("title"),m=document.getElementById("meta"),l=document.getElementById("list");
+            function play(i){idx=i;t.textContent=st[i].n;m.textContent=st[i].c;a.src=st[i].u;btn.textContent="Memuat...";a.play().then(()=>{playing=true;btn.textContent="JEDA SIARAN"}).catch(()=>{a.src=st[i].f;a.play().then(()=>{playing=true;btn.textContent="JEDA SIARAN"})})}
+            btn.onclick=()=>{if(playing){a.pause();playing=false;btn.textContent="PUTAR RADIO"}else{play(idx)}};
+            st.forEach((s,i)=>{const d=document.createElement("div");d.className="row";d.innerHTML="<div><b>"+s.n+"</b><div style='font-size:12px;color:#94a3b8'>"+s.c+"</div></div><span style='color:#38BDF8;font-weight:700'>Putar</span>";d.onclick=()=>play(i);l.appendChild(d)});
+          </script></body></html>
+          EOF
+          fi
+
+          # Unduh Gradle 8.5 langsung tanpa memakai GitHub Cache yang sedang gangguan
+          curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+          ./gradle-8.5/bin/gradle assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../AetherWave-Radio.apk
+
+      - name: 4. Upload File APK Siap Pasang
         uses: actions/upload-artifact@v4
         with:
           name: AetherWave-Android-APK
