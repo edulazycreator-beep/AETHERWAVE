@@ -1,0 +1,6 @@
+{
+  "name": "AetherWave — Global Glass Radio",
+  "description": "Aplikasi radio online lintas negara dengan antarmuka Dynamic Glassmorphism, peta dunia interaktif, visualizer audio, equalizer, perekam siaran, dan sleep timer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
