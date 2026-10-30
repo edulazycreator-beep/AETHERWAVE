@@ -10,26 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: 2. Setup Java JDK 17
+      - name: 1. Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 3. Siapkan Struktur Proyek Android & Compile APK (Tanpa Cache)
+      - name: 2. Bangun Proyek Android & Compile APK (Anti-Blank Screen)
         run: |
-          # Cari file index.html jika sudah diunggah sebelumnya
-          EXISTING_HTML=$(find . -name "index.html" | head -n 1)
+          rm -rf build_apk
           mkdir -p build_apk/app/src/main/java/id/aetherwave/radio
           mkdir -p build_apk/app/src/main/assets
-
-          if [ -n "$EXISTING_HTML" ]; then
-            cp "$EXISTING_HTML" build_apk/app/src/main/assets/index.html
-          fi
-
           cd build_apk
 
           cat << 'EOF' > settings.gradle
@@ -71,8 +62,8 @@ jobs:
                   applicationId "id.aetherwave.radio"
                   minSdk 24
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0.0"
+                  versionCode 2
+                  versionName "1.1.0"
               }
               buildTypes {
                   release {
@@ -99,6 +90,7 @@ jobs:
                   android:allowBackup="true"
                   android:label="AetherWave Radio"
                   android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true"
                   android:theme="@style/Theme.AppCompat.NoActionBar">
                   <activity
                       android:name=".MainActivity"
@@ -115,18 +107,26 @@ jobs:
 
           cat << 'EOF' > app/src/main/java/id/aetherwave/radio/MainActivity.java
           package id.aetherwave.radio;
+
           import android.annotation.SuppressLint;
           import android.graphics.Color;
           import android.os.Bundle;
+          import android.view.ViewGroup;
           import android.view.Window;
           import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
+          import android.widget.FrameLayout;
           import androidx.appcompat.app.AppCompatActivity;
+          import java.io.BufferedReader;
+          import java.io.InputStream;
+          import java.io.InputStreamReader;
+          import java.nio.charset.StandardCharsets;
 
           public class MainActivity extends AppCompatActivity {
               private WebView webView;
+
               @SuppressLint("SetJavaScriptEnabled")
               @Override
               protected void onCreate(Bundle savedInstanceState) {
@@ -134,66 +134,351 @@ jobs:
                   Window window = getWindow();
                   window.setStatusBarColor(Color.parseColor("#090D16"));
                   window.setNavigationBarColor(Color.parseColor("#090D16"));
+
+                  FrameLayout root = new FrameLayout(this);
+                  root.setBackgroundColor(Color.parseColor("#090D16"));
+
                   webView = new WebView(this);
                   webView.setBackgroundColor(Color.parseColor("#090D16"));
                   WebSettings s = webView.getSettings();
                   s.setJavaScriptEnabled(true);
                   s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setAllowFileAccess(true);
+                  s.setAllowContentAccess(true);
                   s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+
                   webView.setWebViewClient(new WebViewClient());
                   webView.setWebChromeClient(new WebChromeClient());
-                  webView.loadUrl("file:///android_asset/index.html");
-                  setContentView(webView);
+
+                  root.addView(webView, new FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT,
+                      ViewGroup.LayoutParams.MATCH_PARENT
+                  ));
+                  setContentView(root);
+
+                  try {
+                      InputStream is = getAssets().open("index.html");
+                      BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                      StringBuilder sb = new StringBuilder();
+                      String line;
+                      while ((line = reader.readLine()) != null) {
+                          sb.append(line).append("\n");
+                      }
+                      reader.close();
+                      webView.loadDataWithBaseURL("https://aetherwave.app/", sb.toString(), "text/html", "UTF-8", null);
+                  } catch (Exception e) {
+                      webView.loadUrl("file:///android_asset/index.html");
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
               }
           }
           EOF
 
-          # Jika index.html belum ada di repo, buat aplikasi radio mandiri otomatis
-          if [ ! -f "app/src/main/assets/index.html" ]; then
-            cat << 'EOF' > app/src/main/assets/index.html
+          cat << 'EOF' > app/src/main/assets/index.html
           <!doctype html>
-          <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>AetherWave Radio</title>
-          <style>
-            *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-            body{font-family: system-ui,-apple-system,sans-serif;background:#090D16;color:#f8fafc;min-height:100vh;padding:16px}
-            .glass{background:linear-gradient(135deg,rgba(255,255,255,0.11),rgba(255,255,255,0.04));backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.15);border-radius:24px;padding:18px;margin-bottom:16px}
-            .btn{background:#38BDF8;color:#090D16;border:none;padding:12px 24px;border-radius:16px;font-weight:800;font-size:14px;cursor:pointer}
-            .row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);cursor:pointer}
-          </style></head><body>
-          <h2 style="margin-bottom:14px;font-weight:800">AetherWave Global Glass Radio</h2>
-          <div class="glass">
-            <div id="title" style="font-size:18px;font-weight:800">Pilih Stasiun Radio Dunia</div>
-            <div id="meta" style="font-size:12px;color:#94a3b8;margin:4px 0 14px">Live Global Stream · Dynamic Glass UI</div>
-            <button class="btn" id="playBtn">PUTAR RADIO</button>
-          </div>
-          <div class="glass" id="list"></div>
-          <audio id="audio"></audio>
-          <script>
-            const st=[
-              {n:"Prambors FM Jakarta",c:"Indonesia 🇮🇩",u:"https://s2.cloudmu.id/listen/prambors/radio.mp3",f:"https://ice1.somafm.com/indiepop-128-mp3"},
-              {n:"J-Pop Sakura & Shibuya",c:"Jepang 🇯🇵",u:"https://listen.moe/stream",f:"https://ice1.somafm.com/vaporwaves-128-mp3"},
-              {n:"Seoul K-Wave Live",c:"Korea Selatan 🇰🇷",u:"https://listen.moe/kpop/stream",f:"https://ice1.somafm.com/poptron-128-mp3"},
-              {n:"London Soho Electronic",c:"Inggris 🇬🇧",u:"https://ice1.somafm.com/groovesalad-256-mp3",f:"https://ice1.somafm.com/groovesalad-128-mp3"},
-              {n:"Radio Paradise California",c:"Amerika Serikat 🇺🇸",u:"https://stream.radioparadise.com/mp3-192",f:"https://ice1.somafm.com/secretagent-128-mp3"},
-              {n:"FIP Radio Paris",c:"Prancis 🇫🇷",u:"https://icecast.radiofrance.fr/fip-midfi.mp3",f:"https://ice1.somafm.com/lush-128-mp3"},
-              {n:"Al-Quran Radio Riyadh",c:"Arab Saudi 🇸🇦",u:"https://stream.radiojar.com/8s5u5tpdtwzuv",f:"https://ice1.somafm.com/dronezone-128-mp3"}
-            ];
-            let idx=0,playing=false;
-            const a=document.getElementById("audio"),btn=document.getElementById("playBtn"),t=document.getElementById("title"),m=document.getElementById("meta"),l=document.getElementById("list");
-            function play(i){idx=i;t.textContent=st[i].n;m.textContent=st[i].c;a.src=st[i].u;btn.textContent="Memuat...";a.play().then(()=>{playing=true;btn.textContent="JEDA SIARAN"}).catch(()=>{a.src=st[i].f;a.play().then(()=>{playing=true;btn.textContent="JEDA SIARAN"})})}
-            btn.onclick=()=>{if(playing){a.pause();playing=false;btn.textContent="PUTAR RADIO"}else{play(idx)}};
-            st.forEach((s,i)=>{const d=document.createElement("div");d.className="row";d.innerHTML="<div><b>"+s.n+"</b><div style='font-size:12px;color:#94a3b8'>"+s.c+"</div></div><span style='color:#38BDF8;font-weight:700'>Putar</span>";d.onclick=()=>play(i);l.appendChild(d)});
-          </script></body></html>
-          EOF
-          fi
+          <html lang="id">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <title>AetherWave — Global Glass Radio</title>
+            <style>
+              :root { --primary: 56, 189, 248; --hex: #38BDF8; }
+              * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: #090D16;
+                color: #F8FAFC;
+                min-height: 100vh;
+                padding: 14px 14px 36px;
+                overflow-x: hidden;
+              }
+              .aurora {
+                position: fixed; inset: 0; pointer-events: none; z-index: 0;
+                background: radial-gradient(circle at 20% 15%, rgba(var(--primary), 0.32) 0%, transparent 55%),
+                            radial-gradient(circle at 85% 75%, rgba(129, 140, 248, 0.22) 0%, transparent 55%);
+                transition: background 0.5s ease;
+              }
+              .wrap { position: relative; z-index: 1; max-width: 520px; margin: 0 auto; }
+              .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+              .brand { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+              .glass {
+                background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%);
+                backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 24px; padding: 16px; margin-bottom: 14px;
+              }
+              .deck-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+              .art {
+                width: 64px; height: 64px; border-radius: 20px; flex-shrink: 0;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 20px; font-weight: 800; color: #fff;
+                background: rgba(var(--primary), 0.35);
+                border: 1px solid rgba(255,255,255,0.25);
+                box-shadow: 0 8px 24px -4px rgba(var(--primary), 0.5);
+              }
+              .st-title { font-size: 17px; font-weight: 800; line-height: 1.25; }
+              .st-meta { font-size: 12px; color: #CBD5E1; margin-top: 3px; }
+              canvas {
+                width: 100%; height: 78px; border-radius: 16px;
+                background: rgba(9, 13, 22, 0.65);
+                border: 1px solid rgba(255,255,255,0.09);
+                display: block; margin-bottom: 12px;
+              }
+              .controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+              .btn {
+                border: 1px solid rgba(255,255,255,0.14);
+                background: rgba(255,255,255,0.09); color: #fff;
+                border-radius: 16px; min-height: 44px; padding: 0 14px;
+                font-size: 12px; font-weight: 700; cursor: pointer;
+              }
+              .btn-play {
+                flex: 1; height: 52px; border-radius: 18px; border: none;
+                background: var(--hex); color: #090D16; font-size: 14px; font-weight: 800;
+                box-shadow: 0 8px 22px -4px rgba(var(--primary), 0.6);
+              }
+              .chips { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px; }
+              .chip {
+                border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05);
+                color: #CBD5E1; padding: 7px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;
+                white-space: nowrap; cursor: pointer;
+              }
+              .chip.active { background: rgba(var(--primary), 0.28); border-color: var(--hex); color: #fff; }
+              .search {
+                width: 100%; padding: 10px 14px; border-radius: 14px;
+                background: rgba(9, 13, 22, 0.75); border: 1px solid rgba(255,255,255,0.15);
+                color: #fff; font-size: 13px; margin-bottom: 10px; outline: none;
+              }
+              .row {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 12px 10px; border-bottom: 1px solid rgba(255,255,255,0.07);
+                border-radius: 14px; cursor: pointer;
+              }
+              .row.active { background: rgba(255,255,255,0.11); }
+              .r-name { font-size: 14px; font-weight: 700; }
+              .r-sub { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+            </style>
+          </head>
+          <body>
+            <div class="aurora"></div>
+            <div class="wrap">
+              <div class="top">
+                <div class="brand">AetherWave Radio</div>
+                <button class="btn" id="rndBtn">Acak Dunia</button>
+              </div>
 
-          # Unduh Gradle 8.5 langsung tanpa memakai GitHub Cache yang sedang gangguan
+              <!-- ACTIVE PLAYER DECK -->
+              <div class="glass">
+                <div class="deck-head">
+                  <div class="art" id="artBox">ID</div>
+                  <div>
+                    <div class="st-title" id="stName">Prambors FM 102.2 Jakarta</div>
+                    <div class="st-meta" id="stMeta">Indonesia · 102.2 FM · 128 kbps</div>
+                  </div>
+                </div>
+                <canvas id="viz" width="440" height="78"></canvas>
+                <div class="controls">
+                  <button class="btn" id="prevBtn">Prev</button>
+                  <button class="btn btn-play" id="playBtn">PUTAR SIARAN</button>
+                  <button class="btn" id="nextBtn">Next</button>
+                </div>
+              </div>
+
+              <!-- SLEEP TIMER & MODE HEMAT DATA -->
+              <div class="glass" style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <div style="font-size:12px">
+                  <b>Sleep Timer & Hemat Data</b>
+                  <div id="timerStatus" style="font-size:11px;color:#94A3B8">Timer: Nonaktif · Kualitas: Standar</div>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn" id="timerBtn" style="min-height:36px;padding:0 10px">Timer 30m</button>
+                  <button class="btn" id="saverBtn" style="min-height:36px;padding:0 10px">Hemat Data</button>
+                </div>
+              </div>
+
+              <!-- COUNTRY DIRECTORY & STATION LIST -->
+              <div class="glass">
+                <input type="search" id="searchBox" class="search" placeholder="Cari stasiun radio atau negara..." />
+                <div class="chips" id="countryChips"></div>
+                <div id="stationList"></div>
+              </div>
+            </div>
+
+            <audio id="audio" preload="none"></audio>
+            <script>
+              const STATIONS = [
+                { n: "Prambors FM 102.2 Jakarta", c: "Indonesia", code: "ID", f: "102.2 FM", b: 128, t: "Top 40 · Pop Indo", col: "#FACC15", rgb: [250,204,21], u: "https://s2.cloudmu.id/listen/prambors/radio.mp3", fb: "https://ice1.somafm.com/indiepop-128-mp3" },
+                { n: "Cosmopolitan Jazz Nusantara", c: "Indonesia", code: "ID", f: "87.6 FM", b: 128, t: "Urban Jazz · Vocal", col: "#F472B6", rgb: [244,114,182], u: "https://ice1.somafm.com/lush-128-mp3", fb: "https://ice2.somafm.com/lush-128-mp3" },
+                { n: "Suara Nusantara Hemat Kuota", c: "Indonesia", code: "ID", f: "90.0 FM", b: 64, t: "Acoustic · Hemat Data", col: "#34D399", rgb: [52,211,153], u: "https://ice1.somafm.com/groovesalad-64-aac", fb: "https://ice1.somafm.com/groovesalad-128-mp3" },
+                { n: "J-Pop Sakura & Shibuya FM", c: "Jepang", code: "JP", f: "81.3 FM", b: 192, t: "J-Pop · City Pop · Anime", col: "#F472B6", rgb: [244,114,182], u: "https://listen.moe/stream", fb: "https://ice1.somafm.com/vaporwaves-128-mp3" },
+                { n: "Tokyo Midnight Lo-Fi & Jazz", c: "Jepang", code: "JP", f: "89.7 FM", b: 128, t: "Lo-Fi · Shibuya Chill", col: "#38BDF8", rgb: [56,189,248], u: "https://ice1.somafm.com/vaporwaves-128-mp3", fb: "https://ice2.somafm.com/vaporwaves-128-mp3" },
+                { n: "Seoul K-Wave & Hongdae Live", c: "Korea", code: "KR", f: "95.9 FM", b: 192, t: "K-Pop · K-Indie · Charts", col: "#A78BFA", rgb: [167,139,250], u: "https://listen.moe/kpop/stream", fb: "https://ice1.somafm.com/poptron-128-mp3" },
+                { n: "London Soho Electronic HD", c: "Inggris", code: "GB", f: "98.8 FM", b: 256, t: "UK Chill · Downtempo", col: "#38BDF8", rgb: [56,189,248], u: "https://ice1.somafm.com/groovesalad-256-mp3", fb: "https://ice1.somafm.com/groovesalad-128-mp3" },
+                { n: "Radio Paradise California", c: "Amerika", code: "US", f: "92.5 FM", b: 192, t: "Eclectic · World Rock", col: "#FB923C", rgb: [251,146,60], u: "https://stream.radioparadise.com/mp3-192", fb: "https://ice1.somafm.com/indiepop-128-mp3" },
+                { n: "Manhattan Velvet Jazz NYC", c: "Amerika", code: "US", f: "88.3 FM", b: 128, t: "Vintage Jazz · Lounge", col: "#F43F5E", rgb: [244,63,94], u: "https://ice1.somafm.com/secretagent-128-mp3", fb: "https://ice2.somafm.com/secretagent-128-mp3" },
+                { n: "FIP Radio France Paris", c: "Prancis", code: "FR", f: "105.1 FM", b: 128, t: "Chanson · Jazz · World", col: "#A78BFA", rgb: [167,139,250], u: "https://icecast.radiofrance.fr/fip-midfi.mp3", fb: "https://ice1.somafm.com/lush-128-mp3" },
+                { n: "Berlin Tresor Electronic", c: "Jerman", code: "DE", f: "97.2 FM", b: 128, t: "Techno · Melodic House", col: "#2DD4BF", rgb: [45,212,191], u: "https://ice1.somafm.com/thetrip-128-mp3", fb: "https://ice2.somafm.com/thetrip-128-mp3" },
+                { n: "Al-Quran Al-Kareem Riyadh", c: "Arab Saudi", code: "SA", f: "100.0 FM", b: 128, t: "Tilawah 24 Jam · Makkah", col: "#34D399", rgb: [52,211,153], u: "https://stream.radiojar.com/8s5u5tpdtwzuv", fb: "https://ice1.somafm.com/dronezone-128-mp3" }
+              ];
+
+              let cur = 0, playing = false, country = "Semua", query = "", dataSaver = false, sleepLeft = 0;
+              const audio = document.getElementById("audio");
+              const playBtn = document.getElementById("playBtn");
+              const stName = document.getElementById("stName");
+              const stMeta = document.getElementById("stMeta");
+              const artBox = document.getElementById("artBox");
+              const timerStatus = document.getElementById("timerStatus");
+
+              function applyStation(i) {
+                cur = i;
+                const s = STATIONS[cur];
+                document.documentElement.style.setProperty("--primary", s.rgb.join(","));
+                document.documentElement.style.setProperty("--hex", s.col);
+                stName.textContent = s.n;
+                stMeta.textContent = s.c + " · " + s.f + " · " + (dataSaver ? "64 kbps Hemat" : s.b + " kbps") + " · " + s.t;
+                artBox.textContent = s.code;
+                renderList();
+              }
+
+              function startPlay(i) {
+                applyStation(i);
+                const s = STATIONS[cur];
+                audio.src = s.u;
+                playBtn.textContent = "MEMUAT...";
+                audio.play().then(() => {
+                  playing = true;
+                  playBtn.textContent = "JEDA SIARAN";
+                  renderList();
+                }).catch(() => {
+                  audio.src = s.fb;
+                  audio.play().then(() => {
+                    playing = true;
+                    playBtn.textContent = "JEDA SIARAN";
+                    renderList();
+                  }).catch(() => {
+                    playing = false;
+                    playBtn.textContent = "PUTAR SIARAN";
+                  });
+                });
+              }
+
+              playBtn.onclick = () => {
+                if (playing) {
+                  audio.pause();
+                  playing = false;
+                  playBtn.textContent = "PUTAR SIARAN";
+                  renderList();
+                } else {
+                  startPlay(cur);
+                }
+              };
+
+              document.getElementById("prevBtn").onclick = () => startPlay((cur - 1 + STATIONS.length) % STATIONS.length);
+              document.getElementById("nextBtn").onclick = () => startPlay((cur + 1) % STATIONS.length);
+              document.getElementById("rndBtn").onclick = () => startPlay(Math.floor(Math.random() * STATIONS.length));
+
+              document.getElementById("timerBtn").onclick = () => {
+                sleepLeft = sleepLeft > 0 ? 0 : 1800;
+                updateStatus();
+              };
+              document.getElementById("saverBtn").onclick = () => {
+                dataSaver = !dataSaver;
+                applyStation(cur);
+                updateStatus();
+              };
+
+              function updateStatus() {
+                const tStr = sleepLeft > 0 ? Math.ceil(sleepLeft / 60) + " menit tersisa" : "Nonaktif";
+                timerStatus.textContent = "Timer: " + tStr + " · Hemat Data: " + (dataSaver ? "ON (64k)" : "OFF");
+              }
+
+              setInterval(() => {
+                if (sleepLeft > 0) {
+                  sleepLeft--;
+                  if (sleepLeft === 0 && playing) {
+                    audio.pause();
+                    playing = false;
+                    playBtn.textContent = "PUTAR SIARAN";
+                  }
+                  updateStatus();
+                }
+              }, 1000);
+
+              document.getElementById("searchBox").oninput = (e) => {
+                query = e.target.value.toLowerCase();
+                renderList();
+              };
+
+              const countries = ["Semua", ...Array.from(new Set(STATIONS.map(s => s.c)))];
+              function renderChips() {
+                const box = document.getElementById("countryChips");
+                box.innerHTML = "";
+                countries.forEach(c => {
+                  const b = document.createElement("button");
+                  b.className = "chip" + (country === c ? " active" : "");
+                  b.textContent = c;
+                  b.onclick = () => { country = c; renderChips(); renderList(); };
+                  box.appendChild(b);
+                });
+              }
+
+              function renderList() {
+                const box = document.getElementById("stationList");
+                box.innerHTML = "";
+                STATIONS.forEach((s, i) => {
+                  if (country !== "Semua" && s.c !== country) return;
+                  if (query && !s.n.toLowerCase().includes(query) && !s.c.toLowerCase().includes(query) && !s.t.toLowerCase().includes(query)) return;
+                  const r = document.createElement("div");
+                  r.className = "row" + (i === cur ? " active" : "");
+                  r.innerHTML = "<div><div class='r-name'>" + s.n + "</div><div class='r-sub'>" + s.c + " · " + s.t + " · " + s.b + " kbps</div></div><div style='font-size:12px;font-weight:800;color:" + s.col + "'>" + (i === cur && playing ? "LIVE" : "Putar") + "</div>";
+                  r.onclick = () => startPlay(i);
+                  box.appendChild(r);
+                });
+              }
+
+              const canvas = document.getElementById("viz");
+              const ctx = canvas.getContext("2d");
+              let phase = 0;
+              function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                phase += playing ? 0.09 : 0.02;
+                const col = STATIONS[cur].col;
+                const n = 30, gap = 4, bw = (canvas.width - gap * (n - 1)) / n;
+                for (let i = 0; i < n; i++) {
+                  const val = playing ? (0.35 + Math.sin(phase * 2.2 + i * 0.4) * 0.25 + Math.cos(phase * 3.1 - i * 0.5) * 0.2) : 0.08;
+                  const bh = Math.max(6, val * (canvas.height - 14));
+                  const x = i * (bw + gap), y = (canvas.height - bh) / 2;
+                  ctx.fillStyle = col;
+                  ctx.beginPath();
+                  ctx.roundRect(x, y, bw, bh, 6);
+                  ctx.fill();
+                }
+                requestAnimationFrame(animate);
+              }
+
+              renderChips();
+              applyStation(0);
+              animate();
+            </script>
+          </body>
+          </html>
+          EOF
+
           curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle.zip
           unzip -q gradle.zip
           ./gradle-8.5/bin/gradle assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk ../AetherWave-Radio.apk
 
-      - name: 4. Upload File APK Siap Pasang
+      - name: 3. Upload File APK Siap Pasang
         uses: actions/upload-artifact@v4
         with:
           name: AetherWave-Android-APK
